@@ -1,0 +1,563 @@
+---
+title: "Modelling factors that predict Heart Attack"
+subtitle: "Data 318 - Final Project"
+author: "Brook Tilahun & Elias Nkuansambo"
+date: "4/21/2022"
+output:   
+  html_document:
+    themes: slate
+    toc: yes
+    toc_float: yes
+    toc_depth: 6
+    highlight: tango
+    df_print: paged
+  pdf_document:
+    toc: yes
+header-includes: |
+  ```{=latex}
+    \usepackage{amsmath,amsthm,amssymb,amsfonts}
+    \theoremstyle{definition}
+    \newtheorem{theorem}{Theorem}
+    \newtheorem{example}[theorem]{Example}
+    \newcommand\ds\displaystyle
+    \newcommand\ep\epsilon
+    \newcommand{\E}[1]{\mathbb{E}[#1]}
+    \newcommand{\R}[1]{\mathbb{R}}
+    \newcommand{\vv}[1]{\mathbf{#1}}
+  ```
+---
+
+# Introduction
+
+### Inspiration
+
+This project is focusing on determining different association between a list of variables and heart attack. The motivation for this project came from our desire to test out some of popular media post about what factors that cause heart attacks, especially green/health influencers. Heart attack, as known to many, is an important and major health concern in today's world. The CDC says "one person dies from heart attack every 36 seconds in the United States of America alone." [CDC,2022](https://www.cdc.gov/heartdisease/facts.htm).Thus it is important that we have the right information circulating out there. Indeed, people in the media can have many opinions, some are correct and some are not. We thought it would be interesting to explore the data on this topic and and bring some real informed response to those popular opinions, and perhaps provide evidence for correction of wrong information. We believe the answers on this project could be a tool for other individuals to use to backup their own opinions as they surf through the internet responding to people in the comment section.  
+
+Please note that none of us is health professional, and this project is not seeing to establish causation but determine association between other variables and heart attack. Indeed there is a high probability that a factor *causing* heart attack would also be highly *associated* with it [i.e.,heart attack]. However, changing the order can lead to misleading conclusions when talking about causation, because a faulty data can breed high correlations between two variables, though no one is confirmed to be causing the other. As students of data science, we aim to explore the data, explore the associations, and present our findings and conclusions.
+
+
+### Data Access
+
+We have used from the [CDC website, 2](https://www.cdc.gov/brfss/annual_data/annual_2020.html)  and it's available for free access to every user. This data was gathered by the CDC's behavioral risk factor surveillance system (BRFSS), which had to conducts an annual telephone survey on more than 400,000 US residents living in all states. The survey uses a standardized set of questions and a random number dialing system. This reduces the bias from sampling errors. However, one source of bias would be from oversampling only a small part of the population that completes the survey. Most of the models we use apply a weight to the variables so that this effect is negligible. The data is reliable and extensive, containing  401,958 rows and 279 columns of data. The *cleaned* version of the data has been made available for download in github.
+
+
+### Tidying the Data
+
+The process of cleaning the data was a little bit straining. The dataset was not in `.csv`,`.excel`, or any format known to us. It was an `.XPT` file, and though RStudio can read `XPT` data, it was a very slow. Additionally, the downloaded data file was over 800 MB in size, which had a great say n the slowness of the of the computer. To deal with it better, we read the `XPT` file and write it into a `.csv` file. The file was a little over 330 MB, which performed much faster than the `XPT`datafile.
+
+The dataset included 279 variables of which, only less than 10 really mattered for this study. Thus, we sought to select the variables needed and compile them into a single  dataframe, which we called `tidy_Data2020`. The variables were chosen according to the most popular opinion in the media regarding the probable indicators of heart attack, and our own ideas of what variable mattered most for the study. Thus, from the pool of variables available in the dataset, we chose:
+
+  + Heart Attack (Target variable)
+  + Coronary Heart Disease
+  + Stroke
+  + Sex
+  + State
+  + Race
+  + Age
+  + BMI
+  + Smoking
+  + Drinking
+  + Asthma
+  + Kidney disease
+  + Cancer (Any cancer)
+  + Skin cancer
+  + COPD
+  + General Health
+  + Physical health
+  + Mental Health
+  + Diabetic
+  + Exercise (Any Exercise)
+  + Marital status (Marital_Status)
+  + Income (Income_Level)
+
+*Note: Please note that most of the variables here are categorical, except for BMI, which is numerical.*
+*Also note that most of the cleaning of the data involving the `.XPT` file is commented out. There is no point in running it when we can use a cleaner and lighter version of it, i.e.,`tidy_Data2020`. *
+
+With a much functional dataset at hand, all that remains is *renaming* and *releveling* the dataset. The variables names in the dataset were all encoded, thus, for simplicity sake, we decided to rename them and relevel them. For example: Heart_Attack was coded as "CVDINFR4", and we had to decode/rename it to heart_attack. What's more, heart_attack had encoded levels such 1 = "yes", 2 = "no", 9 = "Refused". We decoded rename them, substituting the numbers for the correspondent word. In releveling, some levels such as "Don't known", "Refused" or "missing", were removed from the dataset. This way, the data is much cleaner and ready to use, and it is under the same name: `tidy_Data2020`.
+
+
+## Hypothesis
+
+Is there a correlation between heart attack and `factor X`? 
+
+  -   where `factor X` is any predictor variable in the cleaned version of the dataset, i.e., `tidy_Data2020`.
+
+
+# Data Exploration {.tabset}
+
+In this section, we intend to find all the different patterns present in the data, explore them, and arrive to some conclusions for the modeling section. The cleaned version of the dataset, i.e, `tidy_Data2020` looks like this:
+
+### Dataset View
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, comment = NA, warning = FALSE)
+# general purpose libraries
+library(tidyverse)
+library(caret)
+library(pROC)
+library(haven)
+library(forecast)
+library(gganimate)
+library(DT)
+# algorithm specific libraries
+library(MASS) # need for lda/qda
+library(leaps) # Needed for Subset Selection
+library(glmnet) # Needed for Ridge and Lasso
+library(ipred) # for bagging
+library(rpart) # for tree-based methods
+library(gbm) # for boosting
+library(randomForest) # for random forest
+library(e1071) # for svm and naiveBayes
+library(neuralnet) # for neural networks
+library(factoextra)
+library(FactoMineR)
+
+# # Main data
+# 
+# We have included the steps to process the main data from the CDC, in order to achieve a clean data like we have in the clean data section. There is no need to run this unless, you want to add or change variables.
+# 
+# Data_2020 <- read_xpt("LLCP2020.XPT ")
+# cols<- c("CVDINFR4","CVDCRHD4","CVDSTRK3","_STATE","SEXVAR","_IMPRACE","_AGE_G", "GENHLTH","_PHYS14D","_MENT14D","_SMOKER3","_RFDRHV7","ASTHMA3","CHCKDNY2","CHCOCNCR","CHCSCNCR","DIABETE4","CHCCOPD2","EXERANY2","MARITAL","INCOME2")
+# 
+# Data_2020[cols]<- lapply(Data_2020[cols],factor)
+# 
+# tidy_Data2020 <-Data_2020%>% dplyr::select("CVDINFR4","CVDCRHD4","CVDSTRK3","_STATE","SEXVAR","_IMPRACE","_AGE_G","_BMI5","GENHLTH","_PHYS14D","_MENT14D","_SMOKER3","_RFDRHV7","ASTHMA3","CHCKDNY2","CHCOCNCR","CHCSCNCR","DIABETE4","CHCCOPD2","EXERANY2","MARITAL","INCOME2")%>%rename(Heart_Attack="CVDINFR4",Coronary_Heart_Disease="CVDCRHD4",Stroke="CVDSTRK3",SEX = "SEXVAR", State="_STATE", Race="_IMPRACE",Age= "_AGE_G",BMI ="_BMI5",General_Health="GENHLTH",Physical_Health="_PHYS14D",Mental_Health="_MENT14D",Smoking="_SMOKER3",Drinking="_RFDRHV7",Asthma="ASTHMA3",Kidney_Disease="CHCKDNY2",Any_Cancer="CHCOCNCR",Skin_Cancer="CHCSCNCR",Diabetic="DIABETE4",COPD="CHCCOPD2",Any_Excercise="EXERANY2",Marital_Status="MARITAL",Income_Level="INCOME2")%>%mutate(BMI = BMI/100)
+# 
+# new_cols<- c("Heart_Attack","Coronary_Heart_Disease","Stroke","SEX","State","Race","Age","BMI","General_Health","Physical_Health","Mental_Health","Smoking","Drinking","Asthma","Kidney_Disease","Any_Cancer","Skin_Cancer","Diabetic","COPD","Any_Excercise","Marital_Status","Income_Level")
+# 
+# write_csv(tidy_Data2020[new_cols], "tidy_Data2020.csv")
+
+```
+
+```{r}
+# Releveling
+
+tidy_Data2020 <-read.csv("https://raw.githubusercontent.com/brooktila/DATA318/main/tidy_Data2020.csv")%>%na.omit()
+
+tidy_Data2020$Coronary_Heart_Disease <- recode_factor(tidy_Data2020$Coronary_Heart_Disease, "1" = "Yes", "2" = "No","9"= "Refused", "7"="Don't know", "BLANK"="Missing")
+tidy_Data2020$Heart_Attack <- recode_factor(tidy_Data2020$Heart_Attack, "1" = "Yes", "2" = "No","9"= "Refused", "7"="Don't know", "BLANK"="Missing")
+tidy_Data2020$Stroke <- recode_factor(tidy_Data2020$Stroke, "1" = "Yes", "2" = "No","9"= "Refused", "7"="Don't know", "BLANK"="Missing")
+tidy_Data2020$SEX <- recode_factor(tidy_Data2020$SEX, "1" = "Male", "2" = "Female")
+tidy_Data2020$State <- recode_factor(tidy_Data2020$State, "1" = "Alabama", "2" = "Alaska","4"= "Arizona", "5"="Arkansas", "6"="California","8"="Colorado","9"="Connecticut", "10"="Delaware","11"="District of Columbia","12"="Florida","13"="Georgia","15"="Hawaii", "16"="Idaho", "17"="Illinois", "18"="Indiana", "19"="Iowa", "20"="Kansas", "21"="Kentucky", "22"="Lousiana", "23"="Maine", "24"="Maryland", "25"="Massachussetts", "26"="Michigan", "27"="Minnesota", "28"="Mississipi", "29"="Missouri", "30"="Montana", "31"="Nebraska", "32"="Nevada", "33"="New Hampshire","34"="New Jersey","35"="New Mexico","36"="New York","37"="North Carolina", "38"="North Dakota","39"="Ohio","40"="Oklahoma","41"="Oregon","42"="Pennsylvania","44"="Rhode Island", "45"="South Carolina", "46"="South Dakota", "47"="Tennessee", "48"="Texas", "49"="Utah", "50"="Vermont", "51"="Virginia", "53"="Washington","54"="West Virginia","55"="Wisconsin","56"="Wyoming","66"="Guam","72"="Puerto Rico")
+tidy_Data2020$Age <- recode_factor(tidy_Data2020$Age, "1" = "18 to 24", "2" = "25 to 34","3"= "35 to 44", "4"="45 to 54", "5"="55 to 64", "6"="65 or older")
+tidy_Data2020$Race <- recode_factor(tidy_Data2020$Race, "1" = "White", "2" = "Black","3"= "Asian", "4"="Native American", "5"="Hispanic", "6"="Other race")
+tidy_Data2020$General_Health <- recode_factor(tidy_Data2020$General_Health, "1" = "Excellent", "2" = "Very good","3"= "Good", "4"="Fair", "5"="Poor", "7"="Don't know","9"="Refused","BLANK"="Missing")
+tidy_Data2020$Physical_Health <- recode_factor(tidy_Data2020$Physical_Health, "1" = "0 days not good.", "2" = "1-13 days not good","3"= "14+ days not good", "9"="Don't know")
+tidy_Data2020$Drinking <- recode_factor(tidy_Data2020$Drinking, "1" = "No", "2" = "Yes","9"= "Missing")
+tidy_Data2020$Asthma <- recode_factor(tidy_Data2020$Asthma , "1" = "Yes","2"= "No","7"="Don't know","9"="Refused","0" = "Missing")
+tidy_Data2020$Kidney_Disease<- recode_factor(tidy_Data2020$Kidney_Disease, "1" = "Yes","2"= "No","7"="Don't know","9"="Refused","0" = "Missing")
+tidy_Data2020$Any_Cancer<- recode_factor(tidy_Data2020$Any_Cancer, "1" = "Yes","2"= "No","7"="Don't know","9"="Refused","0" = "Missing")
+tidy_Data2020$Skin_Cancer<- recode_factor(tidy_Data2020$Skin_Cancer, "1" = "Yes","2"= "No","7"="Don't know","9"="Refused","0" = "Missing")
+tidy_Data2020$Diabetic<- recode_factor(tidy_Data2020$Diabetic, "1" = "Yes","2"= "Yes,Pregnant","3"="No","4"="No,pre-diabetic","7"="Don't know","9"="Refused","0" = "Missing")
+tidy_Data2020$COPD<- recode_factor(tidy_Data2020$COPD, "1" = "Yes","2"= "No","7"="Don't know","9"="Refused","0" = "Missing")
+tidy_Data2020$Any_Excercise<- recode_factor(tidy_Data2020$Any_Excercise, "1" = "Yes","2"= "No","7"="Don't know","9"="Refused","0" = "Missing")
+tidy_Data2020$Marital_Status<- recode_factor(tidy_Data2020$Marital_Status, "1" = "Married","2"= "Divorced","3"="Widowed","4"="Separated","5"="Never Married","6"="Unmarried Couple","9"="Refused","0" = "Missing")
+tidy_Data2020$Income_Level<- recode_factor(tidy_Data2020$Income_Level, "1" = "< $10,000","2"= "< $15,000","3"="< $20,000","4"="< $25,000","5"="< $35,000","6"="< $50,000","7"="< $75,000","8"="> $75,000","77"="Don't know","99"="Refused","0" = "Missing")
+tidy_Data2020$Smoking<- recode_factor(tidy_Data2020$Smoking, "1" = "Smokes Everyday","2"= "Smokes Somedays","3"="Former Smoker","4"= "Never Smoked","9"="Don't know")
+tidy_Data2020$Mental_Health<- recode_factor(tidy_Data2020$Mental_Health, "1" = "0 Days not good","2"= "1-13 Days not good","3"="14+ Days not good","9"="Don't know")
+
+#Remove unwanted levels
+tidy_Data2020 <- tidy_Data2020%>%filter(!Heart_Attack %in% c("Missing","Don't know","Refused"))%>%mutate(Heart_Attack=fct_drop(Heart_Attack))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Coronary_Heart_Disease %in% c("Missing","Don't know","Refused"))%>%mutate(Coronary_Heart_Disease=fct_drop(Coronary_Heart_Disease))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Mental_Health %in% c("Missing","Don't know","Refused"))%>%mutate(Mental_Health=fct_drop(Mental_Health))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Smoking %in% c("Missing","Don't know","Refused"))%>%mutate(Smoking=fct_drop(Smoking))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Income_Level %in% c("Missing","Don't know","Refused"))%>%mutate(Income_Level=fct_drop(Income_Level))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Marital_Status %in% c("Missing","Don't know","Refused"))%>%mutate(Marital_Status=fct_drop(Marital_Status))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Any_Excercise %in% c("Missing","Don't know","Refused"))%>%mutate(Any_Excercise=fct_drop(Any_Excercise))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!COPD %in% c("Missing","Don't know","Refused"))%>%mutate(COPD=fct_drop(COPD))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Diabetic %in% c("Missing","Don't know","Refused"))%>%mutate(Diabetic=fct_drop(Diabetic))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Skin_Cancer %in% c("Missing","Don't know","Refused"))%>%mutate(Skin_Cancer=fct_drop(Skin_Cancer))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Any_Cancer %in% c("Missing","Don't know","Refused"))%>%mutate(Any_Cancer=fct_drop(Any_Cancer))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Kidney_Disease %in% c("Missing","Don't know","Refused"))%>%mutate(Kidney_Disease=fct_drop(Kidney_Disease))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Asthma %in% c("Missing","Don't know","Refused"))%>%mutate(Asthma=fct_drop(Asthma))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Drinking %in% c("Missing","Don't know","Refused"))%>%mutate(Drinking=fct_drop(Drinking))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Physical_Health %in% c("Missing","Don't know","Refused"))%>%mutate(Physical_Health=fct_drop(Physical_Health))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!General_Health %in% c("Missing","Don't know","Refused"))%>%mutate(General_Health=fct_drop(General_Health))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Race %in% c("Missing","Don't know","Refused"))%>%mutate(Race=fct_drop(Race))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!State %in% c("Missing","Don't know","Refused"))%>%mutate(State=fct_drop(State))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!SEX %in% c("Missing","Don't know","Refused"))%>%mutate(SEX=fct_drop(SEX))
+
+tidy_Data2020 <- tidy_Data2020%>%filter(!Stroke %in% c("Missing","Don't know","Refused"))%>%mutate(Stroke=fct_drop(Stroke))
+
+```
+
+```{r}
+tidy_Data2020
+```
+
+
+### Summary of the Data
+
+```{r}
+summary(tidy_Data2020)
+```
+
+
+As seen in the summary, the data is clean and ready to use. Because this dataset is composed mainly by categorical data, `cor()` function will not work here. Thus, we have to use more visual representations to find this patterns.
+
+### Visualize the Data {.tabset}
+
+We will create some visuals to help us dissect more of the patterns in the data. To do so, we will use a `geom_bar` graph from the `ggplot` package. We used `position` = `fill` to scale the graph in instances where there is a larger observation for one of the variables but not the other.
+
+#### G2: Coronary disease vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Coronary_Heart_Disease, fill = Heart_Attack), position="fill")
+```
+
+#### G3: Stroke vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Stroke, fill = Heart_Attack), position="fill")
+```
+
+#### G4: SEX vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=SEX, fill = Heart_Attack), position="fill")
+```
+
+#### G5: Race vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Race, fill = Heart_Attack), position="fill")
+```
+
+#### G6: General Health vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=General_Health, fill = Heart_Attack), position="fill")
+```
+
+#### G7: Physical Health vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Physical_Health, fill = Heart_Attack), position="fill")
+```
+
+#### G8: Mental Health vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Mental_Health, fill = Heart_Attack), position="fill")
+```
+
+#### G9: Smoking vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Smoking, fill = Heart_Attack), position="fill")
+```
+
+#### G10: State vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=State, fill = Heart_Attack), position="fill")
+```
+
+#### G11: Heart attack vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Heart_Attack, fill = Heart_Attack), position="fill")
+```
+
+#### G12: Drinking vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Drinking, fill = Heart_Attack), position="fill")
+```
+
+#### G13: Asthma vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Asthma, fill = Heart_Attack), position="fill")
+```
+
+#### G14: Kidney Disease vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Kidney_Disease, fill = Heart_Attack), position="fill")
+```
+
+#### G15: Any Cancer vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Any_Cancer, fill = Heart_Attack), position="fill")
+```
+
+#### G16: Skin Cancer vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Skin_Cancer, fill = Heart_Attack), position="fill")
+```
+
+#### G17: Diabetic vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Diabetic, fill = Heart_Attack), position="fill")
+```
+
+#### G18: COPD vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=COPD, fill = Heart_Attack), position="fill")
+```
+
+#### G19: Any_Exercise vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Any_Excercise, fill = Heart_Attack), position="fill")
+```
+
+#### G20: Marital Status vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Marital_Status, fill = Heart_Attack), position="fill")
+```
+
+#### G21: Income Level vs. Heart Attack
+
+```{r}
+tidy_Data2020%>%ggplot()+geom_bar(aes(y=Income_Level, fill = Heart_Attack), position="fill")
+```
+
+### {.unlisted .unnumbered}
+
+Looking at these graphs we noticed that for `Coronary_Heart_Disease` there is a 100% similarity on the data. We will remove this variable from the dataset moving forward. Some interesting associations we noticed with the target variable is:
+
+ + If you had a stroke you are more likely to have a heart attack
+ + Males were more likely to get a heart attack
+ + Being White or Native American increases the likelihood of a heart_attack
+ + Most of the heart attacks occur in those over the age of 45
+ + Those with a higher income level had less occurrence of a heart attack
+ + State does not provide a valuable information. However it increases the computation power required so we'll remove it moving forward
+
+
+### View possible relationships
+
+```{r}
+MCA_data<- subset(tidy_Data2020, select= -c(Coronary_Heart_Disease,State,BMI)) #dataset for MCA, avoids numerical variables and highly correlated variables
+Model_data<- subset(tidy_Data2020, select= -c(Coronary_Heart_Disease,State)) #dataset for other models without state to make computation faster, and without identical variables
+```
+
+The reason we have two data sets here is that Multiple Correspondence Analysis (MCA) prefers all categorical variables so we had to remove BMI.
+
+#### Multiple Correspondence analysis 
+
+```{r, fig.height=4, fig.width=6, fig.align='center'}
+model_MCA<-MCA(MCA_data, ncp = 18, graph =FALSE)
+
+#Eignine value plot
+fviz_screeplot(model_MCA, addlabels = TRUE, ylim = c(0, 10))
+
+#Biplot of every variable
+grp<- as.factor(MCA_data[,"Heart_Attack"])
+fviz_mca_biplot(model_MCA, label="var", invisible ="ind",habillage = grp, addEllipses = TRUE, ellipse.level= 0.95,col.ind = "cos2",
+               repel = TRUE, 
+               ggtheme = theme_minimal())
+
+#Individual plot of response variables grouped based on Heart_Atack
+
+p <- fviz_mca_ind(model_MCA, label="none", habillage=grp,
+       addEllipses=TRUE, ellipse.level=0.95)
+print(p)
+```
+
+The `Scree plots` show us that the first four dimensions explain the variation in most of the data. This means that a computational model using four dimension would explain most of the variation in the data.
+
+The `Biplot` shows the global pattern of the data plotted using dimensions one and two. It plots all the variables in one space using the dimensions as boundaries. We can see that there is an even amount of distribution for similar and dissimilar variables in the data. Looking closer on the representation of the variables in the lower right quadrant, we can note that there is an association between predictors `Former Smoker`, `65 or Older`, `Any_Cancer_Yes`, `Skin_Cancer_Yes`, `Diabetic_Yes`, `Stroke_Yes`, `Kidney_Disease_Yes` and our Target variable(`Heart_Attack_Yes`). These predictors are in line with our hypothesis as it is more common to see people who are older and with other major illness have a heart attack. On the opposite end of the quadrant(Top left), we have variables like (for age)`18-24`, `never_married` and `Unmarried_Couple` far from the the target variable. This suggests that there is a small association with the target variable.
+
+When we apply the target variable to the `biplot`'s individual variables we can see that there is an overlap and close to the center. We can safely assume that a normal distribution curve can be plotted from this values, and models that benefit from this would perform better on prediction. 
+
+
+# Applying several Models
+
+### Create A Data Partition And Defining measures of performance
+
+We will start applying prediction models but first we need to partition the data into a train set and a test set. 
+
+The measures of performance we are using for the models are `Sensitivity`, `Specificity` and `Accuracy`. According to ISLRv2 textbook (James,et.al, 2021), `Sensitivity` is defined as the number of correct positive cases accurately predicted by the model. `Sensitivity` is associated with True positive rate and Type-II error. `Specificity` is the measure of the number of incorrect positive cases predicted by the model. `Specificity` is associated with the false positive rate and a Type-I error. `Accuracy` is positive prediction value. 
+
+In the context of our data set, it is important to improve `sensitivity`, since determining if a person is more likely to have a heart attach is more important. However, having a high `Specfificity` is not of a major concern because in a real-life setting the patient would have other tests to backup the claim of a heart-attack. Therefore, we will use `Sensitivity` as a measure of performance. This means if we have a low sensitivity from the model then it is not suitable for predicting heart_attack.
+
+```{r}
+set.seed(10)
+test_index <- createDataPartition(Model_data$Heart_Attack[1:275388], p = 0.60, list = FALSE)
+train_set <-Model_data[c(test_index),]
+test_set <- Model_data[-c(test_index),] 
+```
+
+### Logistic regression
+
+```{r}
+
+log_model<- glm(Heart_Attack~.,data=train_set, family = binomial)
+summary(log_model)
+phat.log <- predict(log_model, newdata = test_set, type = "response")
+yhat.log <- factor(if_else(phat.log < 0.5,"Yes","No"),levels = c("Yes","No"))
+roc(predictor = phat.log, response = test_set$Heart_Attack, plot = TRUE)
+confusionMatrix(yhat.log, test_set$Heart_Attack)
+
+```
+
+The logistic model used all the variables in the model data and returned a positive prediction accuracy of 0.9443. Most variables were highly significant to the level of p=0. The Sensitivity of this model is very low at 0.05. However, the specificity is very high at 0.99. This model is not suitable for predicting our target variable since there is a very low true positive rate and a high false positive rate.
+However, some variables such as income level until Income_level> $75,000, COPD No, Any Exercise No and Martial_Status Divorced, were not significant. 
+
+### LDA
+
+```{r}
+lda.mod <- lda(Heart_Attack ~ ., data = train_set)
+lda.mod
+
+yhat.lda <- predict(lda.mod, newdata = test_set)
+roc(predictor = yhat.lda$posterior[,1], response = test_set$Heart_Attack, plot = TRUE)
+confusionMatrix(yhat.lda$class, test_set$Heart_Attack)
+```
+
+The LDA model used all the variables from the model data and returned an accuracy of 0.9334. The sensitivity of this model is improved. It is 0.22. The specificity is lowered to 0.9758. This model performance is acceptable to predict our target variable.
+
+### QDA
+
+```{r}
+#Qda
+qda.mod <- qda(Heart_Attack~ .,data=train_set)
+qda.mod
+
+yhat.qda <- predict(qda.mod, newdata = test_set)
+roc(predictor = yhat.qda$posterior[,1], response = test_set$Heart_Attack, plot = TRUE)
+confusionMatrix(yhat.qda$class, test_set$Heart_Attack)
+```
+
+Similarly, the QDA model used the all the variables in the model_data. However, it returned a smaller accuracy at 0.7421. However, it has a sensitivity 0.75468 and a specificity of 0.74131. This is a great model for our prediction since it maximizes the the true positive rate and lowers the false positive rate.
+
+
+### Naive Bayes for Classification
+
+```{r}
+
+
+mod.naive <- naiveBayes(Heart_Attack~., data = train_set, laplace = 0.5)
+mod.naive
+
+phat.naive <- predict(mod.naive, test_set, type = "raw")
+yhat.naive <- predict(mod.naive, test_set, type = "class")
+
+
+roc(predictor = phat.naive[,1], response = test_set$Heart_Attack, plot = TRUE)
+confusionMatrix(yhat.naive,test_set$Heart_Attack)
+```
+
+The Naive Bayes model is 90.01% accurate. But, the sensitivity is lowered to 0.39655 and the specificity is increased to 0.93008. One if the interesting things to note here is looking at the A-PRIORI probabilities for the factors logistic regression identified as insignificant we can see how many times the Bayes classifier designated the predictions in those classes. This would be helpful in creating an overall model. However, the Bayes model in its own is not a great model since it has a lowered sensitivity.  
+
+### Boosted Trees for Classification
+
+```{r}
+train_class01 <- train_set%>% mutate(Heart_Attack = if_else(Heart_Attack == "Yes",1,0))
+
+mod.boost.class <-gbm(Heart_Attack~., data=train_class01, 
+                      distribution = "bernoulli",
+                     n.trees=150, 
+                     interaction.depth=4, 
+                     shrinkage= 0.1,
+                     cv.folds = 10)
+
+summary(mod.boost.class)
+best.iter <- gbm.perf(mod.boost.class, plot.it = TRUE)
+
+phat.boost.class <- predict(mod.boost.class, newdata = test_set, n.trees = best.iter, type = "response")
+yhat.boost.class <- factor(if_else(phat.boost.class > 0.5,"Yes","No"),levels = c("Yes","No"))
+roc(predictor = phat.boost.class, response = test_set$Heart_Attack, plot = TRUE)
+confusionMatrix(yhat.boost.class,test_set$Heart_Attack)
+```
+
+This model also uses all the variables in model_data and is helpful to analze the relative importance graph. It identifies that General health, COPD, Stroke, Diabetes and Kidney Disease to be the top 5 important predictors. The accuracy for this model is 0.944. However, the sensitivity is not very low with a very high specificity. Although this model provides us information on what variables are important on model creation it is not a very good predictor.
+
+### Random Forest
+
+```{r}
+mtry=floor(sqrt(ncol(Model_data))) 
+mod.forest.class <- randomForest(Heart_Attack ~ ., data = train_set, mtry = 4, importance = TRUE)
+varImpPlot(mod.forest.class)
+
+yhat.forest <- predict(mod.forest.class, newdata = test_set)
+confusionMatrix(yhat.forest, test_set$Heart_Attack)
+
+```
+
+This model has one of the highest accuracy at 0.9437 and identifies that sex, general_health, mental_health, BMI, Stroke and income level are the important variables. However, it is also one of the models with the lowest sensitivity and highest specificity. So, we will not use this model to make predictions about heart_attack due to the low rate of true positive predictions.
+
+### Summary of models and Creating best model
+
+The following table shows the sensitivity, specificity and accuracy of all the models we created above.
+
+```{r}
+table <- matrix(c(0.054713,0.997278,0.9443,0.22224,0.97583,0.9334,0.75468,0.74131,0.7421,0.39655,0.93008,0.9001,0.042931,0.997970,0.9443,0.027114,0.998288,0.9437),ncol=3,byrow=TRUE)
+colnames(table) <- c("Sensitivity","Specificity","Accuracy")
+rownames(table) <- c("Logistic","LDA","QDA","Naive Bayes","Boosted Trees","Random Forest")
+table <- as.table(table)
+table
+```
+
+Based on these values we can create an overall model that incorporates the information from these models. The model will be a QDA model. The predictors were selected by looking at the relative importance from boosted trees and comparing then to the mean decrease in accuracy and gini in the results from random trees. Based on this comparison 10 variables were selected. These are General_Health, Age, COPD, Stroke, Diabetic, SEX, Mental_Health, BMI, Income_Level, Smoking.
+
+
+```{r}
+qda.mod2 <- qda(Heart_Attack~ General_Health + Marital_Status + Race + Age + Stroke + Diabetic + SEX + Mental_Health + BMI+ Income_Level + Smoking,data=train_set)
+qda.mod2
+
+yhat.qda <- predict(qda.mod2, newdata = test_set)
+roc(predictor = yhat.qda$posterior[,1], response = test_set$Heart_Attack, plot = TRUE)
+confusionMatrix(yhat.qda$class, test_set$Heart_Attack)
+```
+
+
+Now that we have a model with the most effective predictors that maximize the Sensitivity we can look at what class of these predictors are effective at the prediction. For this we will look at the group means to see which class of predictors had a larger difference. The largest difference in group means was in `General_Health$Fair`, `General_Health$Poor`,  `Marital_Status$Widowed`, `Age$65 or older`, `Smoking$Former_Smoker`. Therefore, we predict that belonging to these categories will increase the chance of `Heart_Attack` being predicted *Yes*.We can put these predictors in a QDA model and see of there is an improvement in the Sensitivity.
+
+```{r}
+qda.mod3 <- qda(Heart_Attack~ General_Health + Marital_Status + Age +  Smoking,data=train_set)
+qda.mod3
+yhat.qda <- predict(qda.mod3, newdata = test_set)
+roc(predictor = yhat.qda$posterior[,1], response = test_set$Heart_Attack, plot = TRUE)
+confusionMatrix(yhat.qda$class, test_set$Heart_Attack)
+```
+
+As expected the model had an improved prediction ability with a sensitivity of 0.82037.
+
+
+# Conclusion
+
+Based on all the models that fit all the variables a high sensitivity was achieved from only a few models. QDA had the highest sensitivity followed by LDA and Naive Bayes. Based on this we suggest that the best model for predicting Heart_Attack to be a combination of QDA with valuable information about predictors from the other models. We tested this hypothesis by narrowing down the variables based on information from boosted trees and random forest and achieved a model with a `sensitivity` of 0.795. Furthermore, we looked at the group means of this model to note that there are classes of predictors which seemed to be more important. By removing the predictors with a small group mean difference we were able to further tune our final model to have a `sensitivity` of 0.82037. Future studies could potentially improve on this by further identifying which classes of predictors have a high relatively significance using models with high computational capacity such as Neural Networks.
+
+Furthermore, to answer our big question posed at the beginning, the variables most correlated with heart attack are:
+
+  + A fair or poor general health condition
+  + A widows : perhaps due to their advanced age as most widows tend to be older
+  + Individuals aged 65 or older : it is fair correlation because human organs start failing as we grow older.
+  + Individuals who used to smoke : At first it did not make much sense since they are no longer smoking. However, we believed the idea here is that people who stopped smoking had spent years and years smoking before they cut it off. And that is one of the causes for this correlation.
+
+Again, we must emphasize that this findings are not meant to interpreted as causation but correlation.
+
+# Sources
+
+1. Centers for Disease Control and Prevention. (2022, February 7). Heart disease facts. Centers for Disease Control and Prevention. Retrieved April 27, 2022, from https://www.cdc.gov/heartdisease/facts.htm 
+
+2. Centers for Disease Control and Prevention. (2021, August 27). CDC - 2020 BRFSS survey data and Documentation. Centers for Disease Control and Prevention. Retrieved April 27, 2022, from https://www.cdc.gov/brfss/annual_data/annual_2020.html 
+
+3. James, G., Witten, D., Hastie, T., & Tibshirani, R. (2021). An introduction to statistical learning (2nd ed.) [PDF]. Springer.
+
